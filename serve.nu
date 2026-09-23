@@ -125,6 +125,16 @@ def page [req: record]: nothing -> string {
       }
     })
 
+    (route {method: GET path: "/debug"} {|req ctx|
+      {
+        headers: $req.headers
+        remote: ($req.remote_ip? | default "")
+        env: ($env | select -o HTTPNU_FLAGS PORT HOST)
+        url_tried: $"http://127.0.0.1:($req.headers.host? | default 'localhost' | split row ':' | last)/sample"
+        fetch: (try { http get --full --max-time 5sec $"http://127.0.0.1:($req.headers.host? | default 'localhost' | split row ':' | last)/sample" | get status } catch {|e| $e.msg })
+        run: (plugin run "'<p>x</p>' | query web --query p | one-per-line")
+      } | to json
+    })
     (route {method: GET path: "/sample"} {|req ctx| .static $STATIC "/sample.html" })
     (route {method: GET} {|req ctx| .static $STATIC $req.path })
   ]
