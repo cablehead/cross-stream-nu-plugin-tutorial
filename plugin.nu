@@ -1,27 +1,25 @@
-# Getting the query plugin onto this host, and running a command with it.
+# Running the query plugin from this site.
 #
-# The handler can't load a plugin into its own engine, so it runs a separate
-# `nu`, the way a reader would at their terminal. The plugin binary and the
-# registry file live in the site's state dir, which survives deploys.
+# The plugin binary is committed to the repo, built for the nu on a
+# cross.stream host (see NU_VERSION). Two things happen around it:
+#
+# - At startup, `plugin add` registers it into a registry file. The registry
+#   records the binary's absolute path, which differs per checkout, so it is
+#   made here rather than committed. Registering takes about 20ms.
+# - Per request, `run` starts a fresh `nu` with the plugin loaded. The handler
+#   runs inside http-nu's own engine, and a plugin cannot be loaded into that.
 
 export const NU_VERSION = "0.113.1"
-const TARBALL = $"nu-($NU_VERSION)-x86_64-unknown-linux-musl"
-const URL = $"https://github.com/nushell/nushell/releases/download/($NU_VERSION)/($TARBALL).tar.gz"
 
-def state []: nothing -> path { $env.CROSS_STREAM_SITE_STATE }
-def plugin-bin []: nothing -> path { state | path join nu_plugin_query }
-def registry []: nothing -> path { state | path join plugins.msgpackz }
+const ROOT = path self | path dirname
+const BINARY = $ROOT | path join nu_plugin_query
 
-# Download the plugin from the Nushell release and register it. Skipped when
-# the registry already exists.
-export def install [] {
-  if (registry | path exists) { return }
-  let tar = state | path join $"($TARBALL).tar.gz"
-  http get $URL | save --force $tar
-  ^tar -xzf $tar -C (state) $"($TARBALL)/nu_plugin_query" --strip-components 1
-  rm $tar
-  ^chmod +x (plugin-bin)
-  ^nu --no-config-file -c $"plugin add --plugin-config (registry) (plugin-bin)"
+# Register the plugin into a temp file and remember where. Run once at
+# startup. The registry is only needed by this process, so a temp file is the
+# right home for it.
+export def --env register [] {
+  $env.NU_PLUGIN_REGISTRY = mktemp --suffix .msgpackz
+  ^nu --no-config-file -c $"plugin add --plugin-config ($env.NU_PLUGIN_REGISTRY) ($BINARY)"
 }
 
 # Defined inside the fresh `nu` so scripts can end with it: a list printed
@@ -37,6 +35,6 @@ def one-per-line []: any -> string {
 # {ok, out, err}.
 export def run [script: string, --timeout: duration = 20sec]: nothing -> record {
   let seconds = $timeout | into int | $in / 1_000_000_000 | into string
-  let r = ^timeout $seconds nu --no-config-file -c $"plugin use --plugin-config (registry) query; ($PRELUDE); ($script)" | complete
+  let r = ^timeout $seconds nu --no-config-file -c $"plugin use --plugin-config ($env.NU_PLUGIN_REGISTRY) query; ($PRELUDE); ($script)" | complete
   { ok: ($r.exit_code == 0), out: $r.stdout, err: $r.stderr, exit_code: $r.exit_code }
 }
