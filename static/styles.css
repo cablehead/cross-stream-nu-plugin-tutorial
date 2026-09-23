@@ -1,0 +1,22 @@
+:root { --ink: #2b2622; --soft: #776e65; --line: #e4dcd2; --paper: #faf8ef; --accent: #8f7a66; --warn: #c0392b; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 system-ui, sans-serif; }
+main, header, footer { max-width: 46rem; margin: 0 auto; padding: 0 1rem; }
+main { padding-top: 1rem; }
+footer { padding: 2rem 1rem; color: var(--soft); font-size: 0.875rem; }
+a { color: var(--accent); }
+h1 { font-size: 1.75rem; margin: 1rem 0 0.5rem; }
+h2 { font-size: 1.15rem; margin: 2rem 0 0.5rem; }
+code { font-size: 0.9375em; }
+pre { margin: 0.75rem 0; padding: 0.75rem; background: #fff; border: 1px solid var(--line); border-radius: 6px; font-size: 0.8125rem; line-height: 1.4; overflow: auto; }
+pre:empty { display: none; }
+pre.command { background: #2b2622; color: #f5efe6; }
+pre.error { color: var(--warn); }
+form.try { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin: 1rem 0 0.5rem; }
+form.try label { display: grid; gap: 0.2rem; color: var(--soft); font-size: 0.875rem; }
+form.try input { padding: 0.4rem 0.5rem; font: inherit; font-family: ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; min-width: 14rem; }
+button { padding: 0.5rem 1rem; border: 0; border-radius: 4px; background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: 0.5; }
+.hint { font-size: 0.875rem; color: var(--soft); margin: 0.25rem 0 0; }
+table { border-collapse: collapse; }
+th, td { padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--line); text-align: left; }
