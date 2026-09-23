@@ -24,10 +24,10 @@ def escape []: string -> string {
   str replace --all "&" "&amp;" | str replace --all "<" "&lt;" | str replace --all ">" "&gt;" | str replace --all '"' "&quot;"
 }
 
-# The command the reader would type. `--attribute` only when they gave one.
-def command [selector: string, attribute: string, url: string]: nothing -> string {
+# The `query web` part of the command, quoted so any input is one string.
+def query-part [selector: string, attribute: string]: nothing -> string {
   let attr = if ($attribute | is-empty) { "" } else { $" --attribute ($attribute | to nuon)" }
-  $"http get ($url) | query web --query ($selector | to nuon)($attr)"
+  $"query web --query ($selector | to nuon)($attr)"
 }
 
 # The lines of a nushell error that matter to the reader: the message and the
@@ -107,14 +107,14 @@ def page [req: record]: nothing -> string {
       let signals = $in | from datastar-signals $req
       let selector = $signals.selector? | default "" | str trim | str substring 0..200
       let attribute = $signals.attribute? | default "" | str trim | str substring 0..60
-      # the sample page, fetched from this same server
-      let url = $"http://127.0.0.1:($req.headers.host? | default 'localhost' | split row ':' | last)/sample"
-      let proto = $req.headers.x-forwarded-proto? | default "http"
-      let shown = command $selector $attribute $"($proto)://($req.headers.host? | default 'localhost')/sample"
+      # What the reader would type: /sample is public. What runs here reads the
+      # same file from disk, since the handler does not know its own port.
+      let shown = $"http get https://($req.headers.host? | default 'localhost')/sample | (query-part $selector $attribute)"
+      let sample = $STATIC | path join sample.html
       if ($selector | is-empty) {
         { command: $shown, output: "", error: "", ran: false, running: false } | to datastar-patch-signals | to sse
       } else {
-        let r = plugin run $"(command $selector $attribute $url) | one-per-line"
+        let r = plugin run $"open --raw ($sample | to nuon) | (query-part $selector $attribute) | one-per-line"
         {
           command: $shown
           output: (if $r.ok { $r.out | str trim } else { "" })
@@ -125,16 +125,6 @@ def page [req: record]: nothing -> string {
       }
     })
 
-    (route {method: GET path: "/debug"} {|req ctx|
-      {
-        headers: $req.headers
-        remote: ($req.remote_ip? | default "")
-        env: ($env | select -o HTTPNU_FLAGS PORT HOST)
-        url_tried: $"http://127.0.0.1:($req.headers.host? | default 'localhost' | split row ':' | last)/sample"
-        fetch: (try { http get --full --max-time 5sec $"http://127.0.0.1:($req.headers.host? | default 'localhost' | split row ':' | last)/sample" | get status } catch {|e| $e.msg })
-        run: (plugin run "'<p>x</p>' | query web --query p | one-per-line")
-      } | to json
-    })
     (route {method: GET path: "/sample"} {|req ctx| .static $STATIC "/sample.html" })
     (route {method: GET} {|req ctx| .static $STATIC $req.path })
   ]
