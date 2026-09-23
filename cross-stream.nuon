@@ -1,1 +1,1 @@
-{ datastar: true }
+{ datastar: true, plugins: ["query"] }
