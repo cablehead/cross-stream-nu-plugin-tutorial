@@ -16,7 +16,7 @@ use ./plugin.nu NU_VERSION
 const ROOT = path self | path dirname
 const STATIC = $ROOT | path join static
 const HTML = { "content-type": "text/html; charset=utf-8" }
-const REPO = "https://github.com/cablehead/nu-plugin-tutorial"
+const REPO = "https://github.com/cablehead/cross-stream-nu-plugin-tutorial"
 
 plugin install
 
