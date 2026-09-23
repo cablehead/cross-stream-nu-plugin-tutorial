@@ -1,7 +1,7 @@
-# A tutorial for the nushell query plugin, with a live example.
+# How a site on cross.stream uses a nushell plugin, with a live example.
 #
-#   GET  /            the tutorial. The reader types a CSS selector and sees
-#                     what `query web` returns for it.
+#   GET  /            the tutorial. It walks through plugin.nu, then lets the
+#                     reader type a CSS selector and see what `query web` returns.
 #   POST /run         runs the reader's selector against /sample in a fresh
 #                     `nu` with the plugin loaded, and patches the result in
 #   GET  /sample      a small page of semantic HTML to query
@@ -46,30 +46,33 @@ def page [req: record]: nothing -> string {
     "<meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
     "<link rel=\"icon\" href=\"data:,\">"
-    "<title>Using a nushell plugin</title>"
+    "<title>A nushell plugin on cross.stream</title>"
     "<link rel=\"stylesheet\" href=\"/styles.css\">"
     $"<script type=\"module\" src=\"($DATASTAR_JS_PATH)\"></script>"
     "</head>"
     $"<body data-signals=\"($signals)\" data-init=\"@post\('/run'\)\">"
     "<main>"
-    "<h1>Using a nushell plugin</h1>"
-    "<p>A nushell plugin is a separate program, named <code>nu_plugin_something</code>, that adds commands to <code>nu</code>. This page walks through one: <code>query</code>, which pulls values out of HTML, JSON and XML. It ships with nushell.</p>"
+    "<h1>Using a nushell plugin from a site on cross.stream</h1>"
+    "<p>A nushell plugin is a separate program, named <code>nu_plugin_something</code>, that adds commands to <code>nu</code>. This site uses one, <code>query</code>, which pulls values out of HTML with a CSS selector. Try it at the bottom of the page. The rest of the page is how the site gets the plugin onto the host and runs it, in three steps that any plugin needs.</p>"
+    "<p>The whole thing is one file, <a href=\"https://github.com/cablehead/cross-stream-nu-plugin-tutorial/blob/main/plugin.nu\"><code>plugin.nu</code></a>, about 40 lines. The pieces below are taken from it.</p>"
 
-    "<h2>1. Get the plugin</h2>"
-    "<p>A plugin is built for one exact version of nushell. The easiest way to get a matching one is the nushell release itself, which includes the plugins next to <code>nu</code>:</p>"
-    $"<pre>nu --version\n# => ($NU_VERSION)\n\n# download the release for your platform from\n# https://github.com/nushell/nushell/releases/tag/($NU_VERSION)\n# and copy nu_plugin_query somewhere on your PATH</pre>"
-    "<p>If you build from source instead, <code>cargo install nu_plugin_query</code> gets the newest version, which must match your <code>nu</code>.</p>"
+    "<h2>1. The plugin has to live in <code>state/</code></h2>"
+    "<p>A plugin binary is 19 MB, so it is not something to commit. The site downloads it from the nushell release the first time it starts. It has to go in the site's state directory, <code>$env.CROSS_STREAM_SITE_STATE</code>: the repo is rebuilt on every push, and everything else on the host is read-only.</p>"
+    "<pre>const TARBALL = $\"nu-($NU_VERSION)-x86_64-unknown-linux-musl\"\nconst URL = $\"https://github.com/nushell/nushell/releases/download/($NU_VERSION)/\"\n  + $\"($TARBALL).tar.gz\"\n\ndef state []: nothing -> path { $env.CROSS_STREAM_SITE_STATE }\n\nlet tar = state | path join $\"($TARBALL).tar.gz\"\nhttp get $URL | save --force $tar\n^tar -xzf $tar -C (state) $\"($TARBALL)/nu_plugin_query\" --strip-components 1\n^chmod +x (state | path join nu_plugin_query)</pre>"
+    $"<p>A plugin is built for one exact version of nushell, and the <code>nu</code> on a cross.stream host is ($NU_VERSION), so the release it is downloaded from must be the same one. The release tarball ships every plugin next to <code>nu</code>, which is why no build step is needed. State survives pushes, so this download happens once per site, not once per deploy.</p>"
 
-    "<h2>2. Register it, once</h2>"
-    "<pre>plugin add ~/.cargo/bin/nu_plugin_query</pre>"
-    "<p><code>plugin add</code> runs the binary, asks it what commands it provides, and records them in nushell's plugin registry file. It does not load the plugin yet.</p>"
+    "<h2>2. Register it, into a file in <code>state/</code> too</h2>"
+    "<p>Before nushell will load a plugin it has to be registered: <code>plugin add</code> runs the binary once, asks it which commands it provides, and writes the answer to a registry file. Normally that file is nushell's own, in the config directory. The handler has no config directory, so the registry is named on the command and kept beside the binary:</p>"
+    "<pre>let registry = state | path join plugins.msgpackz\nlet binary = state | path join nu_plugin_query\n^nu --no-config-file -c $\"plugin add --plugin-config ($registry) ($binary)\"</pre>"
+    "<p>The site skips both steps when the registry file already exists.</p>"
 
-    "<h2>3. Load it</h2>"
-    "<pre>plugin use query</pre>"
-    "<p>Now <code>query web</code>, <code>query json</code> and <code>query xml</code> exist. Put this line in <code>config.nu</code> to have them in every session.</p>"
+    "<h2>3. Run it in a separate <code>nu</code></h2>"
+    "<p>An http-nu handler runs inside http-nu's own nushell engine, and on cross.stream there is no way to load a plugin into it. So the handler does what you would do at a terminal: it starts a fresh <code>nu</code>, loads the plugin with <code>plugin use</code>, and runs the command there.</p>"
+    "<pre>export def run [script: string]: nothing -> record {\n  let registry = state | path join plugins.msgpackz\n  let r = ^nu --no-config-file -c $\"plugin use --plugin-config ($registry) query; ($script)\"\n    | complete\n  { ok: ($r.exit_code == 0), out: $r.stdout, err: $r.stderr }\n}</pre>"
+    "<p><code>complete</code> collects the output and the exit code instead of failing the handler. Starting a <code>nu</code> and loading the plugin costs about 20 milliseconds, so this is fine per request. The site adds a <code>timeout</code> in front of <code>nu</code> so a slow command cannot hold a request open.</p>"
 
-    "<h2>4. Use it</h2>"
-    $"<p><code>query web</code> takes a CSS selector and returns the text of every element that matches. Try it against <a href=\"($sample)\">a small page of semantic HTML</a> served next to this tutorial. Type a selector, and the exact command below runs in a fresh <code>nu</code> on this server.</p>"
+    "<h2>Try it</h2>"
+    $"<p>Type a CSS selector. The command shown runs on this server, through the <code>run</code> function above, against <a href=\"($sample)\">a small page of semantic HTML</a> served next to this one. The selector goes through <code>to nuon</code> on the way in, so whatever you type arrives as one quoted string.</p>"
     "<form class=\"try\" data-on:submit__prevent=\"@post('/run')\">"
     "<label>selector <input name=\"selector\" data-bind:selector data-on:input__debounce.400ms=\"@post('/run')\" placeholder=\"h2\" autocomplete=\"off\" spellcheck=\"false\"></label>"
     "<label>attribute <input name=\"attribute\" data-bind:attribute data-on:input__debounce.400ms=\"@post('/run')\" placeholder=\"(none)\" autocomplete=\"off\" spellcheck=\"false\"></label>"
@@ -83,13 +86,10 @@ def page [req: record]: nothing -> string {
     "<pre class=\"command\" data-text=\"$command\"></pre>"
     "<pre class=\"output\" data-show=\"$ran && $error == ''\" data-text=\"$output\"></pre>"
     "<pre class=\"error\" data-show=\"$error != ''\" data-text=\"$error\"></pre>"
-    "<p>The result is a list with one entry per match. Each entry is itself a list of the element's text pieces, so a <code>&lt;li&gt;</code> holding a link, an author and a year gives five strings, separators included. It is shown here as nuon, one match per line; at the prompt nushell draws it as a table. <code>--attribute</code> returns an attribute instead of the text. From there it is ordinary nushell: <code>flatten</code>, <code>where</code>, <code>sort-by</code>.</p>"
-    "<p><code>query web --as-table [Title Status Rating]</code> finds the table on the page with those headers and returns it as a nushell table. <code>query json</code> and <code>query xml</code> do the same job for JSON (with <a href=\"https://github.com/tidwall/gjson/blob/master/SYNTAX.md\">gjson</a> paths) and XML (with XPath).</p>"
+    "<p>The result is a list with one entry per match. Each entry is itself a list of the element's text pieces, so a <code>&lt;li&gt;</code> holding a link, an author and a year gives five strings, separators included. It is shown here as nuon, one match per line; at the prompt nushell draws it as a table. <code>--attribute</code> returns an attribute instead of the text.</p>"
 
-    "<h2>In a script</h2>"
-    "<p>A script run with <code>--no-config-file</code> has no registry, so name it on the command. This is how this page runs your selector:</p>"
-    "<pre>nu --no-config-file -c \"plugin use --plugin-config plugins.msgpackz query; http get ... | query web --query 'h2'\"</pre>"
-    "<p>The registry file is what <code>plugin add</code> wrote. Make one anywhere with <code>plugin add --plugin-config plugins.msgpackz nu_plugin_query</code>.</p>"
+    "<h2>On your own machine</h2>"
+    "<p>The same three steps apply, with the differences you would expect: <code>plugin add nu_plugin_query</code> with no <code>--plugin-config</code> writes to nushell's own registry, and <code>plugin use query</code> in <code>config.nu</code> loads it in every session. To run this site locally, set <code>CROSS_STREAM_SITE_STATE</code> to any writable directory, which is what the platform does for you when deployed.</p>"
     "</main>"
     "<footer>"
     $"<a href=\"($REPO)\">source</a> · <a href=\"https://www.nushell.sh/book/plugins.html\">the plugins chapter of the nushell book</a> · served by <a href=\"https://http-nu.cross.stream\">http-nu</a>"

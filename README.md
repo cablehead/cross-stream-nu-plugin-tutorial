@@ -1,33 +1,18 @@
-# Using a nushell plugin
+# Using a nushell plugin from a site on cross.stream
 
-A short tutorial for the nushell `query` plugin, with a live example: type a
-CSS selector and see what `query web` returns for it, run in a real `nu` on the
-server.
+A short tutorial, with a live example. It walks through the three things a
+site has to do to use a nushell plugin on the platform: put the plugin binary
+in `state/`, register it into a registry file there, and run it in a separate
+`nu` because the handler cannot load it into its own engine.
 
-Live at https://nu-plugin-tutorial.ndyg.cross.stream.
-
-## How the live example works
-
-The tutorial is an [http-nu](https://github.com/cablehead/http-nu) site. Its
-handler cannot load a plugin into its own engine, so `POST /run` starts a fresh
-`nu` the way a reader would at a terminal:
-
-```
-nu --no-config-file -c "plugin use --plugin-config plugins.msgpackz query; http get .../sample | query web --query 'h2'"
-```
-
-`plugin.nu` fetches `nu_plugin_query` from the nushell release on the first
-start, puts it in the site's state directory, and registers it there. The
-reader's selector is passed through `to nuon`, so it arrives in that command as
-one quoted string whatever it contains.
-
-`/sample` is a small page of semantic HTML to query. It is served from
-`static/sample.html`.
+Live at https://nu-plugin-tutorial.ndyg.cross.stream. The code it walks
+through is `plugin.nu`.
 
 ## Run it locally
 
 You need a `nu` on the PATH whose version matches `NU_VERSION` in `plugin.nu`,
-because the plugin is built for exactly one version.
+since a plugin is built for one version. Give the site a writable directory in
+place of the one the platform provides:
 
 ```bash
 mkdir -p /tmp/tutorial-state
